@@ -67,6 +67,12 @@ class HttpTransport():
             'fileData': (shortFileName, file_data, 'text/plain'),
         })
 
+        if r.status != 200:
+            sublime.error_message(
+                u'Ошибка сохранения'
+            )
+
+
     #Сохраняет папки на удаленный сервер
     def localToRemotePath(self, filePath):
         manager = self.manager
