@@ -5,7 +5,7 @@
 		"children":
 		[
 			{ "caption": "Sync Local -> Remote…", "command": "sftp_sync_up", "args": {"paths": []} },
-			{ "caption": "Sync Remote -> Local…", "command": "http_editor_upload", "args": {"paths": []} }
+			{ "caption": "Sync Remote -> Local…", "command": "http_editor_upload_path", "args": {"paths": []} }
 		]
 	}
 ]

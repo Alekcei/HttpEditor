@@ -1,8 +1,11 @@
 import sublime
 import sublime_plugin
 import json
+import shutil
 
 
+import zipfile
+import io
 import os
 import sys
 import re
@@ -24,6 +27,14 @@ class ITransportInterface:
     def localToRemoteFile(self, filePath): raise NotImplementedError
 
 class HttpTransport():
+
+    # на удаленный сервер
+    uploadPathComand = 'upload_path'
+    uploadFileComand = 'upload_file'
+
+    # с удаленного сервера
+    downloadPathComand = 'download_path'
+    downloadFileComand = 'download_file'
 
     def __init__(self, settings):
 
@@ -51,11 +62,22 @@ class HttpTransport():
         with open(filePath, 'rb') as fp:
             file_data = fp.read()
 
-        r = manager.request('POST', self.httpUrl, fields={
-            'updatingFieldName': shortFileName,
-            'updatingField': (shortFileName, file_data, 'text/plain'),
+        r = manager.request('POST', self.httpUrl+'/'+self.uploadFileComand, fields={
+            'file': shortFileName,
+            'fileData': (shortFileName, file_data, 'text/plain'),
         })
 
+    #Сохраняет папки на удаленный сервер
+    def localToRemotePath(self, filePath):
+        manager = self.manager
+        shortFileName = SublimePluginUtils.filePathInProject(filePath)
+        with open(filePath, 'rb') as fp:
+            file_data = fp.read()
+
+        r = manager.request('POST', self.httpUrl+'/'+self.uploadPathComand, fields={
+            'file': shortFileName,
+            'pathData': (shortFileName, file_data, 'text/plain'),
+        })
 
     #Обновление файла в локальной директории
     def remoteToLocalFile(self, filePath):
@@ -63,36 +85,54 @@ class HttpTransport():
             return
         manager = self.manager
         shortFileName = SublimePluginUtils.filePathInProject(filePath)
-        r = manager.request('GET', self.httpUrl,  fields={'downloadFileName': shortFileName})
+        r = manager.request('GET', self.httpUrl+'/'+self.downloadFileComand,  fields={'file': shortFileName})
+
+        if r.status == 404:
+            sublime.error_message(
+                u'Файл на сервере не найден'
+            )
+            return
+
         overloadedFile = open(filePath, "wb")
         overloadedFile.write(r.data)
         overloadedFile.close()
 
+    #Обновление файла в локальной директории
+    def remoteToLocalPath(self, filePath):
+        if filePath is None:
+            return
+        manager = self.manager
+        shortFileName = SublimePluginUtils.filePathInProject(filePath)
+        r = manager.request('GET', self.httpUrl+'/'+self.downloadPathComand,  fields={'path': shortFileName})
+        zf = zipfile.ZipFile(io.BytesIO(r.data), "r")
 
-class SessionView():
-    sharedAttrs = {}
-
-    def setFromView(externalView, key, val):
-        fullKey = str(externalView.buffer_id())+'_'+key
-        SessionView.sharedAttrs[fullKey] = val
-
-    def set(key, val):
-        curentView = sublime.active_window().active_view()
-        fullKey = str(curentView.buffer_id())+'_'+key
-        SessionView.sharedAttrs[fullKey] = val
-
-
-    def get(key):
-        curentView = sublime.active_window().active_view()
-        fullKey = str(curentView.buffer_id())+'_'+key
-        try:
-	        return SessionView.sharedAttrs[fullKey]            
-        	pass
-        except Exception as e:
-        	return
-
-
+        SublimePluginUtils.clearFolder(filePath)
+        zf.extractall(filePath)
+        zf.close()
+                
 class SublimePluginUtils():
+
+    # чистим папку
+    def clearFolder(folderPath):
+
+        # надо выпилить потом как нить
+        configName = 'http-editor-config.json'
+        for the_file in os.listdir(folderPath):
+            if configName in the_file :
+                continue
+
+            file_path = os.path.join(folderPath, the_file)
+
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(e)
+
+
     # Определяет рутовый каталог по файлу
     def rootDirPath(viewFilePath):
         curentWindow = sublime.active_window()
@@ -107,11 +147,16 @@ class SublimePluginUtils():
         return folderPath[0]
 
     def filePathInProject(viewFilePath):
+
         curentWindow = sublime.active_window()
         folderPath = curentWindow.folders()
+
         for path in folderPath:
+            if viewFilePath == path :
+                return "/"
+
             if viewFilePath is not None and viewFilePath.startswith( path ):
-                return viewFilePath.replace(path+'/', "")
+                return viewFilePath.replace(path, "")
                 pass
             pass
 
@@ -164,7 +209,12 @@ class HttpEditorListener(sublime_plugin.EventListener):
 
 class HttpEditorUploadCommand(sublime_plugin.WindowCommand):
     def run(self, paths):
+
+        configName = 'http-editor-config.json'
         view = sublime.active_window().active_view()
+        if configName in view.file_name():
+            pass
+
         transport = SessionView.get('transport')
         if transport is None:
             return
@@ -173,3 +223,64 @@ class HttpEditorUploadCommand(sublime_plugin.WindowCommand):
 
 
 
+class HttpEditorUploadPathCommand(sublime_plugin.WindowCommand):
+    def run(self, paths):
+
+        path = paths[0]
+        configName = 'http-editor-config.json'
+        if configName in path:
+            pass
+        rootPath = SublimePluginUtils.rootDirPath(path)
+        transport = SessionRootPath.getFromPath(rootPath, 'transport')
+        if transport is None:
+
+            localSettingsPath = rootPath+'/'+configName
+            jsonSettings = SublimePluginUtils.jsonData(localSettingsPath)
+            if jsonSettings is None:
+                return
+            transport = HttpTransport(jsonSettings)
+
+        if os.path.isfile(path):
+            transport.remoteToLocalFile(path)
+            return
+        
+        transport.remoteToLocalPath(path)
+
+
+
+class SessionView():
+    sharedAttrs = {}
+
+    def setFromView(externalView, key, val):
+        fullKey = str(externalView.buffer_id())+'_'+key
+        SessionView.sharedAttrs[fullKey] = val
+
+    def set(key, val):
+        curentView = sublime.active_window().active_view()
+        fullKey = str(curentView.buffer_id())+'_'+key
+        SessionView.sharedAttrs[fullKey] = val
+
+
+    def get(key):
+        curentView = sublime.active_window().active_view()
+        fullKey = str(curentView.buffer_id())+'_'+key
+        try:
+            return SessionView.sharedAttrs[fullKey]            
+            pass
+        except Exception as e:
+            return
+
+class SessionRootPath():
+    sharedAttrs = {}
+
+    def setFromPath(externalPath, key, val):
+        fullKey = str(externalPath)+'_'+key
+        SessionView.sharedAttrs[fullKey] = val
+
+    def getFromPath(externalPath, key):
+        fullKey = str(externalPath)+'_'+key
+        try:
+            return SessionRootPath.sharedAttrs[fullKey]
+            pass
+        except Exception as e:
+            return
