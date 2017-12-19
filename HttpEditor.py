@@ -10,7 +10,8 @@ import os
 import sys
 import re
 
-from .lib.urllib3 import PoolManager
+from threading import Thread
+from .lib.urllib3 import PoolManager, make_headers
 from .http_editor.commands  import RemoteToLocalFileCommand
 #import httplib
 
@@ -54,6 +55,13 @@ class HttpTransport():
         # инициализируем переменные класса
         self.httpUrl = httpUrl
         self.manager = manager
+        headers={}
+        if settings.get('user') and settings.get('password'):
+            headers = make_headers(basic_auth=settings.get('user') + ':' + settings.get('password'))
+            headers.update({"Authorization": headers.get('authorization')})
+            headers.pop('authorization', None)
+            pass
+        self.headers=headers
 
     #Сохраняет файл на удаленный сервер
     def localToRemoteFile(self, filePath):
@@ -65,12 +73,19 @@ class HttpTransport():
         r = manager.request('POST', self.httpUrl+'/'+self.uploadFileComand, fields={
             'file': shortFileName,
             'fileData': (shortFileName, file_data, 'text/plain'),
-        })
+        }, headers=self.headers)
+
+        if r.status == 403:
+            sublime.error_message(
+                u'Ошибка аутентификации'
+            )
+            return
 
         if r.status != 200:
             sublime.error_message(
                 u'Ошибка сохранения'
             )
+            return
 
 
     #Сохраняет папки на удаленный сервер
@@ -83,19 +98,44 @@ class HttpTransport():
         r = manager.request('POST', self.httpUrl+'/'+self.uploadPathComand, fields={
             'file': shortFileName,
             'pathData': (shortFileName, file_data, 'text/plain'),
-        })
+        }, headers=self.headers)
+
+        if r.status == 403:
+            sublime.error_message(
+                u'Ошибка аутентификации'
+            )
+            return
+
+        if r.status != 200:
+            sublime.error_message(
+                u'Ошибка сохранения'
+            )
+            return
 
     #Обновление файла в локальной директории
     def remoteToLocalFile(self, filePath):
         if filePath is None:
             return
+
         manager = self.manager
         shortFileName = SublimePluginUtils.filePathInProject(filePath)
-        r = manager.request('GET', self.httpUrl+'/'+self.downloadFileComand,  fields={'file': shortFileName})
+        r = manager.request('GET', self.httpUrl+'/'+self.downloadFileComand,  fields={'file': shortFileName}, headers=self.headers)
+
+        if r.status == 403:
+            sublime.error_message(
+                u'Ошибка аутентификации'
+            )
+            return
 
         if r.status == 404:
             sublime.error_message(
                 u'Файл на сервере не найден'
+            )
+            return
+
+        if r.status != 200:
+            sublime.error_message(
+                u'Ошибка сохранения'
             )
             return
 
@@ -109,7 +149,19 @@ class HttpTransport():
             return
         manager = self.manager
         shortFileName = SublimePluginUtils.filePathInProject(filePath)
-        r = manager.request('GET', self.httpUrl+'/'+self.downloadPathComand,  fields={'path': shortFileName})
+        r = manager.request('GET', self.httpUrl+'/'+self.downloadPathComand,  fields={'path': shortFileName}, headers=self.headers)
+
+        if r.status == 403:
+            sublime.error_message(
+                u'Ошибка аутентификации'
+            )
+            return
+        if r.status != 200:
+            sublime.error_message(
+                u'Ошибка сохранения'
+            )
+            return
+
         zf = zipfile.ZipFile(io.BytesIO(r.data), "r")
 
         SublimePluginUtils.clearFolder(filePath)
@@ -175,6 +227,7 @@ class SublimePluginUtils():
                 content = f.read()
             pass
         except Exception as e:
+            print('Ошибка обработки файла настройки', e)
             return
 
         jsonObj = json.loads(RE_COMMENTS.sub('', content))
@@ -250,9 +303,8 @@ class HttpEditorUploadPathCommand(sublime_plugin.WindowCommand):
             transport.remoteToLocalFile(path)
             return
         
-        transport.remoteToLocalPath(path)
-
-
+        t = Thread(group=None, target=transport.remoteToLocalPath, name="T1", args=(path,), kwargs={})
+        t.start()
 
 class SessionView():
     sharedAttrs = {}
