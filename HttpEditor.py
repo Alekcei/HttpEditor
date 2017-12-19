@@ -75,6 +75,12 @@ class HttpTransport():
             'fileData': (shortFileName, file_data, 'text/plain'),
         }, headers=self.headers)
 
+        if r.status == 400:
+            view = sublime.active_window().active_view()
+            # sublime.set_timeout_async(lambda: sublime.message_dialog("message_dialog check:sdsds"), 0)   кнопка ок
+            view.show_popup('ERROR SAVE: '+r.data.decode("utf-8"), location=-1, max_width=800, on_hide=True)
+            return
+
         if r.status == 403:
             sublime.error_message(
                 u'Ошибка аутентификации'
@@ -86,6 +92,12 @@ class HttpTransport():
                 u'Ошибка сохранения'
             )
             return
+
+        if r.status == 200:
+            view = sublime.active_window().active_view()
+            view.show_popup('Успешно сохраннео'+r.data.decode("utf-8"), location=-1, max_width=800, on_hide=True, flags=sublime.HIDE_ON_MOUSE_MOVE_AWAY)
+            return
+
 
 
     #Сохраняет папки на удаленный сервер
@@ -221,6 +233,9 @@ class SublimePluginUtils():
         return viewFilePath
 
     def jsonData(settingPath):
+        if os.path.isfile(settingPath) is False:
+            return
+
         RE_COMMENTS = re.compile('[^:]\/\/[^\\n]*',  re.S)
         try:
             with open(settingPath) as f:
