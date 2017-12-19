@@ -1,0 +1,10 @@
+{
+	"name": "HttpEditor",
+	"details": "https://github.com/Alekcei/HttpEditor",
+	"releases": [
+		{
+			"sublime_text": "*",
+			"tags": true
+		}
+	]
+}
