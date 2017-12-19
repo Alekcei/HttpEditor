@@ -1,3 +1,5 @@
 {
 	"httpUrl":"http://172.30.0.38:9080/ibank-core-bid/template/sync"
+	// "user": "admin",
+	// "password" : ""
 }

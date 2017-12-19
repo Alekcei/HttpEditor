@@ -306,6 +306,7 @@ class HttpEditorUploadPathCommand(sublime_plugin.WindowCommand):
             pass
         rootPath = SublimePluginUtils.rootDirPath(path)
         transport = SessionRootPath.getFromPath(rootPath, 'transport')
+        print('transport  ',transport)
         if transport is None:
 
             localSettingsPath = rootPath+'/'+configName
