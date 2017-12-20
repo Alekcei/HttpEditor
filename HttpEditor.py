@@ -145,9 +145,15 @@ class HttpTransport():
             )
             return
 
+        if r.status == 404:
+            sublime.error_message(
+                u'Файл на сервере не найден'
+            )
+            return
+
         if r.status != 200:
             sublime.error_message(
-                u'Ошибка сохранения'
+                u'Ошибка обновления файла'
             )
             return
 
